@@ -2,7 +2,7 @@
 
 A simple solution for the supplied statement: **Streamlit + SQLite + gpt-4o-mini**.
 
-Ask a question, see the SQL, and get an answer, table, and applicable graph. One LLM generates SQL; Python validates, executes, and summarizes it. No multi-agent framework or vector database.
+Ask a question, see the SQL, and get an answer, table, and applicable graph. The workflow uses focused guardrail/question-breaker, table-selection, SQL-generation, and SQL-correction calls. Python validates and executes SQL, then builds summaries, charts, and follow-up suggestions from the results. No multi-agent framework or vector database is required.
 
 ## Run
 
@@ -25,7 +25,7 @@ OPENAI_API_KEY=your_key_here
 
 Choose **GPT-4o mini** in the sidebar. The app always uses `gpt-4o-mini`, even if a different model is configured in the environment. For Streamlit Cloud, set the key in app secrets and use `streamlit_app.py` as the entry point. Keep keys out of source control.
 
-Questions, recent chat context, and schema metadata are sent to OpenAI. SQL results are summarized locally, avoiding a second model call.
+Questions, recent chat context, and schema metadata are sent to OpenAI. One request can be split into at most three subquestions. Each generated query is executed through the read-only validator. If execution fails, the SQL corrector gets the error and full schema for one retry. Repeated failures are shown to the user. SQL results are summarized locally.
 
 ## Files
 
@@ -64,11 +64,11 @@ Reports contain result-based execution accuracy, SQL execution success, average/
 
 ## Cost and limits
 
-At an illustrative 2,000 input + 300 output tokens per question, 100 questions cost about **$0.048** at standard [GPT-4o mini prices](https://developers.openai.com/api/docs/models/gpt-4o-mini). Actual successful-call token usage is displayed. No paid model calls were made during this build.
+At an illustrative 2,000 input + 300 output tokens **per model call**, each call costs about **$0.00048** at standard [GPT-4o mini prices](https://developers.openai.com/api/docs/models/gpt-4o-mini). A simple question normally makes three calls, or about **$0.144 for 100 questions** at that illustrative token count; decomposed questions and correction retries cost more. Actual successful-call token usage is aggregated and displayed. No paid model calls were made during this build.
 
 The UI stops new model requests near $2 of estimated successful-call usage in the current session. This resets with a new session and is **not an account-wide spending cap**. Monitor API usage; failed requests may also be billed.
 
-The UI returns up to 200 rows. Evaluation compares up to 1,000 and refuses truncated comparisons. SQL execution has a two-second limit; model requests time out after 35 seconds. These safeguards do not constitute a measured guarantee of the 60-second latency target.
+The UI returns up to 200 rows per subquestion. Evaluation compares up to 1,000 and refuses truncated comparisons. SQL execution has a two-second limit; each model request times out after 35 seconds. Multiple stages can exceed the 60-second target; live latency is unmeasured.
 
 ## Tests
 

@@ -5,15 +5,19 @@
 ```mermaid
 flowchart TD
     CSV[Nine bike-store CSV files] --> DB[(SQLite database)]
-    UI[Streamlit: user's question] --> LLM[GPT-4o mini: generate SQL]
+    UI[Streamlit: user's question] --> BREAK[Guardrail and question breaker]
     DB --> SCHEMA[Schema, foreign keys, business definitions]
-    SCHEMA --> LLM
+    SCHEMA --> BREAK
+    BREAK --> SELECT[Table selection per subquestion]
+    SELECT --> LLM[SQL generation per subquestion]
     LLM --> CHECK[Python: validate and run read-only SQL]
+    CHECK -->|execution error, once| FIX[SQL correction with error and full schema]
+    FIX --> CHECK
     CHECK --> DB
     DB --> RESULT[Query rows]
-    RESULT --> ANSWER[Python: factual natural-language summary]
+    RESULT --> ANSWER[Python: factual subquestion and final summaries]
     RESULT --> DISPLAY[Streamlit: table and applicable graph]
-    LLM --> SQL[Streamlit: raw SQL]
+    CHECK --> SQL[Streamlit: final raw SQL]
     ANSWER --> UI
 ```
 
@@ -21,7 +25,7 @@ Python 3.9+, Streamlit 1.50, pandas, SQLite, and OpenAI's Responses API. The mod
 
 ## Agent definition and prompt
 
-**One SQL-generation agent is sufficient.** Input: question, recent conversation, schema, foreign keys, and business rules. Output: SQL, chart metadata, assumptions, or a clarification. Python performs validation, execution, and factual summarization. No multi-agent framework or vector database is needed.
+The workflow has separate prompt-driven guardrail/question-breaker, table-selection, SQL-generation, and SQL-correction stages. The breaker handles up to three self-contained subquestions. Python executes the final SQL, summarizes actual rows, renders the plan's chart when applicable, combines subanswers, and suggests existing example questions. These are callable agents, without a multi-agent framework or vector database.
 
 Full prompt: `bikestore/llm.py`, `generate_plan`. Dataset-specific rules: `bikestore/assignment.py`, `BUSINESS_RULES`. Main instruction:
 
@@ -41,10 +45,10 @@ Assignment conventions:
 1. Validate the question and API configuration.
 2. Validate the model's structured plan; handle refusals, incomplete responses, clarifications, and provider errors.
 3. Allow one SELECT/nonrecursive CTE. Use SQLite read-only mode, allowed tables/functions, row limits, and a two-second execution limit. Deny writes, metadata access, extensions, and multiple statements.
-4. Report SQL errors; describe empty results accurately. Generate summaries and charts only from returned rows.
+4. On an execution error, send the SQL, error, and full schema to the corrector once; validate and run the corrected SQL through the same read-only executor. Report a repeated failure.
 5. Evaluate semantically wrong joins against ground truth. Syntax checks alone cannot establish that a join answers the user's question.
 
-No automatic model retry loop is used, keeping the workflow and costs simple.
+The correction loop is bounded to one retry per subquestion. The UI shows when correction occurred.
 
 ## Evaluation method and metrics
 
@@ -77,14 +81,14 @@ Result matching is preferable to exact SQL-text matching because equivalent SQL 
 
 ## Cost estimate: 100 user queries
 
-Assume one call per question, 2,000 input tokens, 300 output tokens, and no cached-input discount:
+Assume three calls for a simple question (breaker, table selection, SQL generation), 2,000 input tokens and 300 output tokens per call, and no cached-input discount:
 
-- Input: `100 × 2,000 × $0.15 / 1,000,000 = $0.030`.
-- Output: `100 × 300 × $0.60 / 1,000,000 = $0.018`.
-- **Estimated total: $0.048.** Actual usage varies with the schema, question, history, and response length.
+- Input: `100 × 3 × 2,000 × $0.15 / 1,000,000 = $0.090`.
+- Output: `100 × 3 × 300 × $0.60 / 1,000,000 = $0.054`.
+- **Estimated total: $0.144.** Multiple subquestions and correction retries add calls. Actual usage varies with the schema, question, history, and response length.
 
 Rates checked on 2026-10-08 against [GPT-4o mini pricing](https://developers.openai.com/api/docs/models/gpt-4o-mini). The UI and evaluator report successful-call token usage. Failed calls may also be billed. Monitor account usage to stay within the $2 experiment budget; the UI's session estimate is not an account-wide spending cap.
 
 ## Source and deployment
 
-The source ZIP contains the app, data, tests, architecture, and reference results. For Streamlit hosting, use `streamlit_app.py` as the entry point, install `requirements.txt`, and configure `OPENAI_API_KEY` through secrets. GitHub account creation, repository publishing, and cloud deployment have not been performed.
+For Streamlit hosting, use `streamlit_app.py` as the entry point, install `requirements.txt`, and configure `OPENAI_API_KEY` through secrets. Live model quality and latency remain unmeasured without an API key.

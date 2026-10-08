@@ -20,7 +20,7 @@ if not api_key:
         pass
 
 st.title("🚲 Bike Store Text-to-SQL")
-st.caption("Ask a question → generate SQL → get an answer, table, and graph.")
+st.caption("Ask a question → check scope → split if needed → select tables → run and correct SQL → see answers and charts.")
 try:
     ensure_database()
     schema, overview = context()
@@ -57,9 +57,9 @@ with st.expander("Try the problem statement's examples", expanded=not st.session
             selected = example["question"]
 
 
-def show_result(result, key):
+def show_part(result, key, mode):
     st.write(result["answer"])
-    st.markdown("**Generated SQL**" if result["mode"] != "example" else "**Reference SQL (example mode)**")
+    st.markdown("**Generated SQL**" if mode != "example" else "**Reference SQL (example mode)**")
     st.code(result["sql"], language="sql")
     frame = pd.DataFrame(result["rows"], columns=result["columns"])
     st.dataframe(frame, hide_index=True, width="stretch")
@@ -72,10 +72,12 @@ def show_result(result, key):
         plot(frame, x=chart["x"], y=chart["y"])
     for note in result["notes"]:
         st.caption(note)
+    if result.get("selected_tables"):
+        st.caption("Selected tables: {}".format(", ".join(result["selected_tables"])))
+    if result.get("corrections"):
+        st.caption("SQL was corrected after a failed execution and then ran successfully.")
     if result["truncated"]:
         st.warning("Only the first 200 rows are shown. Narrow the question for a complete result.")
-    st.caption("Response time: {:.3f}s · {} · Estimated API cost: ${:.6f}".format(
-        result["response_seconds"], result["mode"], result["estimated_cost_usd"]))
     # Prefix formula-like text so downloaded values cannot become spreadsheet formulas.
     output = io.StringIO()
     writer = csv.writer(output)
@@ -84,6 +86,20 @@ def show_result(result, key):
     writer.writerow([safe(c) for c in result["columns"]])
     writer.writerows([[safe(row[c]) for c in result["columns"]] for row in result["rows"]])
     st.download_button("Download results", output.getvalue(), "results.csv", "text/csv", key="csv-" + str(key))
+
+
+def show_result(result, key):
+    parts = result.get("subresults") or [result]
+    if len(parts) > 1:
+        st.write(result["answer"])
+    for index, part in enumerate(parts):
+        if len(parts) > 1:
+            st.markdown("#### {}. {}".format(index + 1, part["title"]))
+        show_part(part, "{}-{}".format(key, index), result["mode"])
+    if result.get("suggestions"):
+        st.caption("Try next: " + " · ".join(result["suggestions"]))
+    st.caption("Response time: {:.3f}s · {} · Estimated API cost: ${:.6f}".format(
+        result["response_seconds"], result["mode"], result["estimated_cost_usd"]))
 
 
 for index, message in enumerate(st.session_state.messages):

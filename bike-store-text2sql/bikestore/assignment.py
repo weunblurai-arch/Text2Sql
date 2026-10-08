@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .sql import QueryError, execute_sql
 from .answers import summarize
-from .llm import DEFAULT_MODEL, ModelError, generate_plan
+from .llm import DEFAULT_MODEL, ModelError, break_question, generate_plan, select_tables
 
 ROOT = Path(__file__).resolve().parent.parent
 CSV_DIR = ROOT / "data" / "csv"
@@ -125,26 +125,70 @@ def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, m
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
         raise QueryError("Enter a question of 1–2,000 characters.")
     started = time.perf_counter()
+    usage = {"input_tokens": 0, "output_tokens": 0}
+
+    def add_usage(tokens):
+        for key in usage:
+            usage[key] += int((tokens or {}).get(key, 0) or 0)
+
     if examples_only:
         normalize = lambda s: s.strip().rstrip(".?!").lower()
         example = next((x for x in EXAMPLES if normalize(x["question"]) == normalize(question)), None)
         if example is None:
             raise QueryError("Example mode only runs the three provided questions. Add your API key and select GPT-4o mini for other questions.")
-        plan = {"sql": example["sql"], "title": question, "chart": example["chart"], "notes": [], "usage": {}}
+        questions = [question]
     else:
         if not api_key:
             raise ModelError("Set OPENAI_API_KEY in .env, then choose GPT-4o mini.")
         schema, overview = context(path)
-        plan = generate_plan(question, history or [], schema, overview, api_key, DEFAULT_MODEL, include_usage=True)
-    result = run_sql(plan["sql"], path, max_rows=max_rows)
-    answer = summarize(plan, result)
-    if result["columns"] == ["total_stores"] and len(result["rows"]) == 1:
-        answer = "There are a total of {} stores.".format(result["rows"][0]["total_stores"])
-    elif result["columns"] == ["brand_name"]:
-        answer = "The catalog contains these brands: {}.".format(
-            ", ".join(str(row["brand_name"]) for row in result["rows"])) if result["rows"] else "No brands matched this query."
-    return dict(result, question=question, sql=plan["sql"], answer=answer,
-                chart=plan["chart"], notes=plan["notes"],
+        questions, tokens = break_question(question, history or [], schema, api_key)
+        add_usage(tokens)
+
+    subresults = []
+    for subquestion in questions:
+        if examples_only:
+            plan = {"sql": example["sql"], "title": subquestion, "chart": example["chart"], "notes": [], "usage": {}}
+            selected = []
+        else:
+            selected_schema, tokens = select_tables(subquestion, schema, api_key)
+            selected = [table["name"] for table in selected_schema["tables"]]
+            add_usage(tokens)
+            plan = generate_plan(subquestion, history or [], selected_schema, overview,
+                                 api_key, DEFAULT_MODEL, include_usage=True)
+            add_usage(plan.get("usage"))
+        corrections = 0
+        try:
+            result = run_sql(plan["sql"], path, max_rows=max_rows)
+        except QueryError as first_error:
+            if examples_only:
+                raise
+            # A failed execution goes to the SQL-corrector agent once. Every attempt
+            # still passes through the same read-only, bounded executor.
+            corrections = 1
+            repaired = generate_plan(subquestion, history or [], schema, overview, api_key,
+                                     DEFAULT_MODEL, include_usage=True,
+                                     repair={"sql": plan["sql"], "error": str(first_error)[:500]})
+            add_usage(repaired.get("usage"))
+            if repaired["sql"].strip() == plan["sql"].strip():
+                raise QueryError("SQL correction returned the same failing query. Try a more specific question.")
+            plan = repaired
+            result = run_sql(plan["sql"], path, max_rows=max_rows)
+        answer = summarize(plan, result)
+        if result["columns"] == ["total_stores"] and len(result["rows"]) == 1:
+            answer = "There are a total of {} stores.".format(result["rows"][0]["total_stores"])
+        elif result["columns"] == ["brand_name"]:
+            answer = "The catalog contains these brands: {}.".format(
+                ", ".join(str(row["brand_name"]) for row in result["rows"])) if result["rows"] else "No brands matched this query."
+        subresults.append(dict(result, question=subquestion, sql=plan["sql"], answer=answer,
+                               chart=plan["chart"], notes=plan["notes"], selected_tables=selected,
+                               corrections=corrections, title=plan["title"]))
+
+    # Final summary and suggested-question agents use executed values only.
+    final_answer = "\n\n".join((item["title"] + ": " if len(subresults) > 1 else "") + item["answer"]
+                             for item in subresults)
+    suggestions = [item["question"] for item in EXAMPLES if item["question"].strip().lower() != question.strip().lower()][:2]
+    return dict(subresults[0], question=question, answer=final_answer,
+                subresults=subresults, suggestions=suggestions,
                 response_seconds=round(time.perf_counter() - started, 4),
-                usage=plan.get("usage", {}), estimated_cost_usd=usage_cost(plan.get("usage", {})),
+                usage=usage, estimated_cost_usd=usage_cost(usage),
                 mode="example" if examples_only else DEFAULT_MODEL)

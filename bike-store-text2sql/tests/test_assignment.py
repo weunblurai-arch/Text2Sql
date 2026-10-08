@@ -65,7 +65,9 @@ class AssignmentTests(unittest.TestCase):
     def test_model_pipeline_is_pinned_to_required_model_and_real_schema(self):
         plan = {"sql": EXAMPLES[0]["sql"], "title": "Store count", "chart": EXAMPLES[0]["chart"], "notes": [],
                 "usage": {"input_tokens": 2000, "output_tokens": 300}}
-        with patch("bikestore.assignment.generate_plan", return_value=plan) as model:
+        with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.generate_plan", return_value=plan) as model:
             answer = ask(EXAMPLES[0]["question"], self.path, "fake-key")
             self.assertEqual(model.call_args.args[5], "gpt-4o-mini")
             self.assertIn("staffs", [t["name"] for t in model.call_args.args[2]["tables"]])
@@ -75,10 +77,52 @@ class AssignmentTests(unittest.TestCase):
     def test_evaluation_compares_results_instead_of_sql_text(self):
         equivalent = {"sql": "SELECT SUM(1) AS differently_named_count FROM stores", "title": "Stores",
                       "chart": EXAMPLES[0]["chart"], "notes": [], "usage": {}}
-        with patch("bikestore.assignment.generate_plan", return_value=equivalent):
+        with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.generate_plan", return_value=equivalent):
             report = evaluate(EXAMPLES[:1], self.path, "fake-key")
         self.assertEqual(report["metrics"]["execution_accuracy"], 1.0)
         self.assertEqual(report["metrics"]["sql_execution_success_rate"], 1.0)
+
+    def test_failed_sql_is_repaired_once_with_full_schema(self):
+        bad = {"sql": "SELECT missing_column FROM stores", "title": "Stores",
+               "chart": EXAMPLES[0]["chart"], "notes": [], "usage": {"input_tokens": 10, "output_tokens": 5}}
+        good = {**bad, "sql": EXAMPLES[0]["sql"]}
+        with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.generate_plan", side_effect=[bad, good]) as model:
+            answer = ask(EXAMPLES[0]["question"], self.path, "fake-key")
+        self.assertEqual(answer["rows"], [{"total_stores": 3}])
+        self.assertEqual(answer["corrections"], 1)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn("no such column", model.call_args.kwargs["repair"]["error"])
+        self.assertEqual(answer["usage"]["input_tokens"], 20)
+
+    def test_unsafe_sql_remains_blocked_after_one_correction(self):
+        bad = {"sql": "DELETE FROM stores", "title": "Stores", "chart": EXAMPLES[0]["chart"],
+               "notes": [], "usage": {}}
+        worse = {**bad, "sql": "DROP TABLE stores"}
+        with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.generate_plan", side_effect=[bad, worse]) as model:
+            with self.assertRaises(QueryError):
+                ask(EXAMPLES[0]["question"], self.path, "fake-key")
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(run_sql("SELECT COUNT(*) AS n FROM stores", self.path)["rows"], [{"n": 3}])
+
+    def test_compound_question_runs_each_subquestion(self):
+        questions = ["How many stores?", "Which brands exist?"]
+        plans = [{"sql": EXAMPLES[0]["sql"], "title": "Stores", "chart": EXAMPLES[0]["chart"],
+                  "notes": [], "usage": {}},
+                 {"sql": EXAMPLES[1]["sql"], "title": "Brands", "chart": EXAMPLES[1]["chart"],
+                  "notes": [], "usage": {}}]
+        with patch("bikestore.assignment.break_question", return_value=(questions, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.generate_plan", side_effect=plans):
+            answer = ask("How many stores and which brands?", self.path, "fake-key")
+        self.assertEqual(len(answer["subresults"]), 2)
+        self.assertIn("There are a total of 3 stores", answer["answer"])
+        self.assertIn("brand", answer["answer"].lower())
 
     def test_result_comparison_preserves_duplicates_and_optional_order(self):
         self.assertTrue(rows_match([[1], [2]], [[2], [1]]))
