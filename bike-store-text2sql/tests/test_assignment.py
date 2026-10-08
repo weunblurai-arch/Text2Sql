@@ -69,10 +69,10 @@ class AssignmentTests(unittest.TestCase):
              patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", return_value=plan) as model:
             answer = ask(EXAMPLES[0]["question"], self.path, "fake-key")
-            self.assertEqual(model.call_args.args[5], "gemini-3.8-flash")
+            self.assertEqual(model.call_args.args[5], "gemini-3.5-flash-lite")
             self.assertIn("staffs", [t["name"] for t in model.call_args.args[2]["tables"]])
             self.assertEqual(answer["rows"], [{"total_stores": 3}])
-            self.assertAlmostEqual(answer["estimated_cost_usd"], 0.002625)
+            self.assertAlmostEqual(answer["estimated_cost_usd"], 0.00135)
 
     def test_evaluation_compares_results_instead_of_sql_text(self):
         equivalent = {"sql": "SELECT SUM(1) AS differently_named_count FROM stores", "title": "Stores",

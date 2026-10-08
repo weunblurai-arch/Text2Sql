@@ -96,7 +96,7 @@ def evaluate(cases, path=DB_PATH, api_key="", reference_only=False):
     successes = sum(r["execution_ok"] for r in records)
     matches = sum(r["result_match"] for r in records)
     return {
-        "mode": "reference_only" if reference_only else (os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"),
+        "mode": "reference_only" if reference_only else (os.environ.get("GEMINI_MODEL") or "gemini-3.5-flash-lite"),
         "dataset": "Kaggle bike-store-sample-database",
         "case_count": len(records),
         "metrics": {

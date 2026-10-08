@@ -6,7 +6,7 @@ from copy import deepcopy
 from unittest.mock import patch
 from urllib import error
 
-from bikestore.llm import ModelError, generate_plan, validate_plan
+from bikestore.llm import ModelError, PLAN_SCHEMA, generate_plan, validate_plan
 
 
 def query_plan(**changes):
@@ -58,7 +58,8 @@ class LLMTransportTests(unittest.TestCase):
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(req.get_header("X-goog-api-key"), "test-key-never-sent")
         payload = json.loads(req.data)
-        self.assertEqual(payload["generationConfig"]["responseFormat"]["text"]["mimeType"], "application/json")
+        self.assertEqual(payload["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(payload["generationConfig"]["responseJsonSchema"], PLAN_SCHEMA)
         context = json.loads(payload["contents"][0]["parts"][0]["text"])
         self.assertEqual(context["question"], "Revenue by store")
         self.assertEqual(context["schema"]["tables"][0]["name"], "stores")

@@ -9,7 +9,7 @@ from urllib import error, request
 
 from .sql import ALLOWED_FUNCTIONS
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 
@@ -155,8 +155,8 @@ def _request_structured(instructions, context, response_schema, api_key, model=D
         "system_instruction": {"parts": [{"text": instructions}]},
         "contents": [{"parts": [{"text": json.dumps(context)}]}],
         "generationConfig": {"maxOutputTokens": 2500,
-                             "responseFormat": {"text": {"mimeType": "application/json",
-                                                         "schema": response_schema}}},
+                             "responseMimeType": "application/json",
+                             "responseJsonSchema": response_schema},
     }
     req = request.Request(API_URL.format(model), data=json.dumps(payload).encode("utf-8"), headers={
         "x-goog-api-key": api_key,

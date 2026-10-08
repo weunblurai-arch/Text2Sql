@@ -21,7 +21,7 @@ flowchart TD
     ANSWER --> UI
 ```
 
-Python 3.9+, Streamlit 1.50, pandas, SQLite, and the Gemini generateContent REST API. The default model is **gemini-3.8-flash**; **gemini-3.5-flash-lite** is also supported. Gemini structured output returns SQL and chart metadata in a defined JSON shape. [Model documentation](https://ai.google.dev/gemini-api/docs/models), [structured output](https://ai.google.dev/gemini-api/docs/generate-content/structured-output). The original assignment requested `gpt-4o-mini`; this implementation uses Gemini at the user's request.
+Python 3.9+, Streamlit 1.50, pandas, SQLite, and the Gemini generateContent REST API. The default model is **gemini-3.5-flash-lite**; **gemini-3.8-flash** is also supported. Gemini structured output returns SQL and chart metadata in a defined JSON shape. [Model documentation](https://ai.google.dev/gemini-api/docs/models), [structured output](https://ai.google.dev/gemini-api/docs/generate-content/structured-output). The original assignment requested `gpt-4o-mini`; this implementation uses Gemini at the user's request.
 
 ## Agent definition and prompt
 
@@ -83,9 +83,9 @@ Result matching is preferable to exact SQL-text matching because equivalent SQL 
 
 Assume three calls for a simple question (breaker, table selection, SQL generation), 2,000 input tokens and 300 output tokens per call, and no cached-input discount:
 
-- Input: `100 × 3 × 2,000 × $0.75 / 1,000,000 = $0.450`.
-- Output: `100 × 3 × 300 × $3.75 / 1,000,000 = $0.3375`.
-- **Estimated paid-tier total: $0.7875.** Free-tier eligible calls cost $0. Multiple subquestions and correction retries add calls. Actual usage varies with the schema, question, history, and response length.
+- Input: `100 × 3 × 2,000 × $0.30 / 1,000,000 = $0.180`.
+- Output: `100 × 3 × 300 × $2.50 / 1,000,000 = $0.225`.
+- **Estimated paid-tier total: $0.405.** Free-tier eligible calls cost $0. Multiple subquestions and correction retries add calls. Actual usage varies with the schema, question, history, and response length.
 
 Rates checked on 2026-10-08 against [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing). The UI and evaluator report successful-call token usage. Failed calls may also be billed. Monitor account usage to stay within the $2 experiment budget; the UI's session estimate is not an account-wide spending cap.
 

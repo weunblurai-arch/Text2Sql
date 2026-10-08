@@ -21,10 +21,10 @@ Copy `.env.example` to `.env` and add your own key:
 
 ```dotenv
 GEMINI_API_KEY=your_new_key_here
-GEMINI_MODEL=gemini-3.8-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
-Choose **Gemini** in the sidebar. Supported models are `gemini-3.8-flash` (default) and `gemini-3.5-flash-lite`. For Streamlit Cloud, set `GEMINI_API_KEY` in app secrets and use `streamlit_app.py` as the entry point. Keep real keys in `.env` or app secrets, never in `.env.example` or source control. If a key was placed in `.env.example`, rotate it in Google AI Studio before use.
+Choose **Gemini** in the sidebar. Supported models are `gemini-3.5-flash-lite` (default) and `gemini-3.8-flash`. For Streamlit Cloud, set `GEMINI_API_KEY` in app secrets and use `streamlit_app.py` as the entry point. Keep real keys in `.env` or app secrets, never in `.env.example` or source control. If a key was placed in `.env.example`, rotate it in Google AI Studio before use.
 
 Questions, recent chat context, and schema metadata are sent to Gemini. One request can be split into at most three subquestions. Each generated query is executed through the read-only validator. If execution fails, the SQL corrector gets the error and full schema for one retry. Repeated failures are shown to the user. SQL results are summarized locally.
 
@@ -65,7 +65,7 @@ Reports contain result-based execution accuracy, SQL execution success, average/
 
 ## Cost and limits
 
-At an illustrative 2,000 input + 300 output tokens **per model call**, each call costs about **$0.002625** at standard paid-tier [Gemini 3.8 Flash prices](https://ai.google.dev/gemini-api/docs/pricing). A simple question normally makes three calls, or about **$0.7875 for 100 questions** at that illustrative token count; decomposed questions and correction retries cost more. Free-tier eligible calls cost $0. Actual successful-call token usage is aggregated and displayed.
+At an illustrative 2,000 input + 300 output tokens **per model call**, each call costs about **$0.00135** at standard paid-tier [Gemini 3.5 Flash-Lite prices](https://ai.google.dev/gemini-api/docs/pricing). A simple question normally makes three calls, or about **$0.405 for 100 questions** at that illustrative token count; decomposed questions and correction retries cost more. Free-tier eligible calls cost $0. Actual successful-call token usage is aggregated and displayed.
 
 The UI stops new model requests near $2 of estimated successful-call usage in the current session. This resets with a new session and is **not an account-wide spending cap**. Monitor API usage; failed requests may also be billed.
 

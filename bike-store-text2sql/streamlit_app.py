@@ -41,7 +41,7 @@ with st.sidebar:
             st.code(", ".join(c["name"] for c in table["columns"]), language="text")
     if st.button("Clear chat"):
         st.session_state.messages = []
-    st.caption("Only read-only queries are allowed. Model: {}.".format(os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")))
+    st.caption("Only read-only queries are allowed. Model: {}.".format(os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")))
 
 if examples_only:
     st.info("Example mode uses the three reference SQL queries from the statement. It does not call an LLM. Select Gemini for arbitrary questions.")
