@@ -1,0 +1,121 @@
+{
+  "mode": "reference_only",
+  "dataset": "Kaggle bike-store-sample-database",
+  "case_count": 3,
+  "metrics": {
+    "execution_accuracy": null,
+    "sql_execution_success_rate": null,
+    "average_response_seconds": null,
+    "p95_response_seconds": null,
+    "responses_under_60_seconds_rate": null,
+    "reference_fixture_match_rate": 1.0,
+    "average_reference_execution_seconds": 0.00132,
+    "estimated_api_cost_usd": 0
+  },
+  "notes": [
+    "Reference-only results are not LLM accuracy or LLM latency measurements.",
+    "Result comparison ignores aliases; column order must match; row order follows order_sensitive.",
+    "Duplicates are preserved; integer values match exactly; decimal absolute tolerance is $0.01.",
+    "Natural-language answers are generated deterministically from executed rows; no separate semantic answer score is claimed.",
+    "Cost includes returned successful-call usage only; failed provider calls may also incur charges."
+  ],
+  "cases": [
+    {
+      "id": "example_1",
+      "question": "How many stores do we have?",
+      "reference_sql": "SELECT COUNT(*) AS total_stores FROM stores;",
+      "generated_sql": null,
+      "execution_ok": true,
+      "result_match": true,
+      "rows": [
+        {
+          "total_stores": 3
+        }
+      ],
+      "columns": [
+        "total_stores"
+      ],
+      "response_seconds": 0.000203
+    },
+    {
+      "id": "example_2",
+      "question": "List all brand names in our catalog.",
+      "reference_sql": "SELECT brand_name FROM brands ORDER BY brand_name;",
+      "generated_sql": null,
+      "execution_ok": true,
+      "result_match": true,
+      "rows": [
+        {
+          "brand_name": "Electra"
+        },
+        {
+          "brand_name": "Haro"
+        },
+        {
+          "brand_name": "Heller"
+        },
+        {
+          "brand_name": "Pure Cycles"
+        },
+        {
+          "brand_name": "Ritchey"
+        },
+        {
+          "brand_name": "Strider"
+        },
+        {
+          "brand_name": "Sun Bicycles"
+        },
+        {
+          "brand_name": "Surly"
+        },
+        {
+          "brand_name": "Trek"
+        }
+      ],
+      "columns": [
+        "brand_name"
+      ],
+      "response_seconds": 0.000187
+    },
+    {
+      "id": "example_3",
+      "question": "Give me Top 3 best selling products from California.",
+      "reference_sql": "SELECT p.product_id, p.product_name, c.state, SUM(oi.quantity) AS total_quantity_sold, SUM(oi.quantity * oi.list_price * (1 - oi.discount)) AS total_revenue FROM customers c JOIN orders o ON c.customer_id = o.customer_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id WHERE c.state = 'CA' GROUP BY p.product_id, p.product_name ORDER BY total_revenue DESC LIMIT 3;",
+      "generated_sql": null,
+      "execution_ok": true,
+      "result_match": true,
+      "rows": [
+        {
+          "product_id": 7,
+          "product_name": "Trek Slash 8 27.5 - 2016",
+          "state": "CA",
+          "total_quantity_sold": 32,
+          "total_revenue": 115119.7122
+        },
+        {
+          "product_id": 9,
+          "product_name": "Trek Conduit+ - 2016",
+          "state": "CA",
+          "total_quantity_sold": 39,
+          "total_revenue": 103199.65599999999
+        },
+        {
+          "product_id": 4,
+          "product_name": "Trek Fuel EX 8 29 - 2016",
+          "state": "CA",
+          "total_quantity_sold": 31,
+          "total_revenue": 81286.7197
+        }
+      ],
+      "columns": [
+        "product_id",
+        "product_name",
+        "state",
+        "total_quantity_sold",
+        "total_revenue"
+      ],
+      "response_seconds": 0.00357
+    }
+  ]
+}

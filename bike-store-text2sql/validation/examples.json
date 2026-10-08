@@ -1,0 +1,26 @@
+[
+  {
+    "id": "example_1",
+    "question": "How many stores do we have?",
+    "sql": "SELECT COUNT(*) AS total_stores FROM stores;",
+    "expected_rows": [[3]],
+    "order_sensitive": false,
+    "chart": {"type": "none", "x": "", "y": "", "title": ""}
+  },
+  {
+    "id": "example_2",
+    "question": "List all brand names in our catalog.",
+    "sql": "SELECT brand_name FROM brands ORDER BY brand_name;",
+    "expected_rows": [["Electra"], ["Haro"], ["Heller"], ["Pure Cycles"], ["Ritchey"], ["Strider"], ["Sun Bicycles"], ["Surly"], ["Trek"]],
+    "order_sensitive": true,
+    "chart": {"type": "none", "x": "", "y": "", "title": ""}
+  },
+  {
+    "id": "example_3",
+    "question": "Give me Top 3 best selling products from California.",
+    "sql": "SELECT p.product_id, p.product_name, c.state, SUM(oi.quantity) AS total_quantity_sold, SUM(oi.quantity * oi.list_price * (1 - oi.discount)) AS total_revenue FROM customers c JOIN orders o ON c.customer_id = o.customer_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id WHERE c.state = 'CA' GROUP BY p.product_id, p.product_name ORDER BY total_revenue DESC LIMIT 3;",
+    "expected_rows": [[7, "Trek Slash 8 27.5 - 2016", "CA", 32, 115119.7122], [9, "Trek Conduit+ - 2016", "CA", 39, 103199.6560], [4, "Trek Fuel EX 8 29 - 2016", "CA", 31, 81286.7197]],
+    "order_sensitive": true,
+    "chart": {"type": "bar", "x": "product_name", "y": "total_revenue", "title": "Top 3 products in California by revenue"}
+  }
+]
