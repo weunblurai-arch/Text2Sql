@@ -116,15 +116,20 @@ def run_sql(sql, path=DB_PATH, max_rows=200):
     return execute_sql(sql, path, max_rows=max_rows, allowed_tables=TABLES)
 
 
-def usage_cost(usage):
-    # Standard gpt-4o-mini prices, USD per million tokens; no cached-input discount assumed.
-    return (usage.get("input_tokens", 0) * 0.15 + usage.get("output_tokens", 0) * 0.60) / 1_000_000
+def usage_cost(usage, model=DEFAULT_MODEL):
+    # Standard paid-tier Gemini text prices per million tokens; free tier costs $0.
+    rates = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.5-flash-lite": (0.30, 2.50)}
+    input_rate, output_rate = rates[model]
+    return (usage.get("input_tokens", 0) * input_rate + usage.get("output_tokens", 0) * output_rate) / 1_000_000
 
 
 def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, max_rows=200):
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
         raise QueryError("Enter a question of 1–2,000 characters.")
     started = time.perf_counter()
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    if not examples_only and model not in {"gemini-3.8-flash", "gemini-3.5-flash-lite"}:
+        raise ModelError("GEMINI_MODEL must be gemini-3.8-flash or gemini-3.5-flash-lite.")
     usage = {"input_tokens": 0, "output_tokens": 0}
 
     def add_usage(tokens):
@@ -135,13 +140,13 @@ def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, m
         normalize = lambda s: s.strip().rstrip(".?!").lower()
         example = next((x for x in EXAMPLES if normalize(x["question"]) == normalize(question)), None)
         if example is None:
-            raise QueryError("Example mode only runs the three provided questions. Add your API key and select GPT-4o mini for other questions.")
+            raise QueryError("Example mode only runs the three provided questions. Add GEMINI_API_KEY and select Gemini for other questions.")
         questions = [question]
     else:
         if not api_key:
-            raise ModelError("Set OPENAI_API_KEY in .env, then choose GPT-4o mini.")
+            raise ModelError("Set GEMINI_API_KEY in .env, then choose Gemini.")
         schema, overview = context(path)
-        questions, tokens = break_question(question, history or [], schema, api_key)
+        questions, tokens = break_question(question, history or [], schema, api_key, model)
         add_usage(tokens)
 
     subresults = []
@@ -150,11 +155,11 @@ def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, m
             plan = {"sql": example["sql"], "title": subquestion, "chart": example["chart"], "notes": [], "usage": {}}
             selected = []
         else:
-            selected_schema, tokens = select_tables(subquestion, schema, api_key)
+            selected_schema, tokens = select_tables(subquestion, schema, api_key, model)
             selected = [table["name"] for table in selected_schema["tables"]]
             add_usage(tokens)
             plan = generate_plan(subquestion, history or [], selected_schema, overview,
-                                 api_key, DEFAULT_MODEL, include_usage=True)
+                                 api_key, model, include_usage=True)
             add_usage(plan.get("usage"))
         corrections = 0
         try:
@@ -166,7 +171,7 @@ def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, m
             # still passes through the same read-only, bounded executor.
             corrections = 1
             repaired = generate_plan(subquestion, history or [], schema, overview, api_key,
-                                     DEFAULT_MODEL, include_usage=True,
+                                     model, include_usage=True,
                                      repair={"sql": plan["sql"], "error": str(first_error)[:500]})
             add_usage(repaired.get("usage"))
             if repaired["sql"].strip() == plan["sql"].strip():
@@ -190,5 +195,5 @@ def ask(question, path=DB_PATH, api_key="", history=None, examples_only=False, m
     return dict(subresults[0], question=question, answer=final_answer,
                 subresults=subresults, suggestions=suggestions,
                 response_seconds=round(time.perf_counter() - started, 4),
-                usage=usage, estimated_cost_usd=usage_cost(usage),
-                mode="example" if examples_only else DEFAULT_MODEL)
+                usage=usage, estimated_cost_usd=usage_cost(usage, model),
+                mode="example" if examples_only else model)

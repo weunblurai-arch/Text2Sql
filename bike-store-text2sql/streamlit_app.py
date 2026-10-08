@@ -12,10 +12,10 @@ from bikestore.llm import ModelError, load_env
 
 st.set_page_config(page_title="Bike Store Text-to-SQL", page_icon="🚲", layout="centered")
 load_env(ROOT / ".env")
-api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 if not api_key:
     try:
-        api_key = st.secrets.get("OPENAI_API_KEY", "")
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
     except (FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
         pass
 
@@ -30,23 +30,23 @@ except (ValueError, OSError) as exc:
 
 with st.sidebar:
     st.header("Project settings")
-    mode = st.radio("Query mode", ["GPT-4o mini", "Examples (no API calls)"], index=0 if api_key else 1)
+    mode = st.radio("Query mode", ["Gemini", "Examples (no API calls)"], index=0 if api_key else 1)
     examples_only = mode.startswith("Examples")
     st.caption("SQLite · 9 tables · {} to {}".format(overview["data_start"], overview["data_end"]))
     if not api_key:
-        st.info("To enable the LLM, add OPENAI_API_KEY to the project's .env file or Streamlit secrets.")
+        st.info("To enable Gemini, add GEMINI_API_KEY to the project's .env file or Streamlit secrets.")
     with st.expander("Database schema"):
         for table in schema["tables"]:
             st.markdown("**{}** ({} rows)".format(table["name"], table["row_count"]))
             st.code(", ".join(c["name"] for c in table["columns"]), language="text")
     if st.button("Clear chat"):
         st.session_state.messages = []
-    st.caption("Only read-only queries are allowed. Model: gpt-4o-mini.")
+    st.caption("Only read-only queries are allowed. Model: {}.".format(os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")))
 
 if examples_only:
-    st.info("Example mode uses the three reference SQL queries from the statement. It does not call an LLM. Select GPT-4o mini for arbitrary questions.")
+    st.info("Example mode uses the three reference SQL queries from the statement. It does not call an LLM. Select Gemini for arbitrary questions.")
 else:
-    st.caption("Questions, recent chat context, and schema metadata are sent to OpenAI. SQL results are summarized locally.")
+    st.caption("Questions, recent chat context, and schema metadata are sent to Gemini. SQL results are summarized locally.")
 
 st.session_state.setdefault("messages", [])
 st.session_state.setdefault("estimated_spend", 0.0)

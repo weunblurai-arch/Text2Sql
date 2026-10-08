@@ -23,10 +23,10 @@ def query_plan(**changes):
 
 def envelope(plan=None, **changes):
     body = {
-        "status": "completed",
-        "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps(query_plan() if plan is None else plan)}
-        ]}],
+        "candidates": [{"finishReason": "STOP", "content": {"parts": [
+            {"text": json.dumps(query_plan() if plan is None else plan)}
+        ]}}],
+        "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 20, "thoughtsTokenCount": 5},
     }
     body.update(changes)
     return body
@@ -54,14 +54,12 @@ class LLMTransportTests(unittest.TestCase):
 
         self.assertEqual(self.generate(fake_transport), query_plan())
         req = captured["request"]
-        self.assertEqual(req.full_url, "https://api.openai.com/v1/responses")
+        self.assertEqual(req.full_url, "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent")
         self.assertEqual(req.get_method(), "POST")
-        self.assertEqual(req.get_header("Authorization"), "Bearer test-key-never-sent")
+        self.assertEqual(req.get_header("X-goog-api-key"), "test-key-never-sent")
         payload = json.loads(req.data)
-        self.assertFalse(payload["store"])
-        self.assertEqual(payload["model"], "test-model")
-        self.assertTrue(payload["text"]["format"]["strict"])
-        context = json.loads(payload["input"][0]["content"])
+        self.assertEqual(payload["generationConfig"]["responseFormat"]["text"]["mimeType"], "application/json")
+        context = json.loads(payload["contents"][0]["parts"][0]["text"])
         self.assertEqual(context["question"], "Revenue by store")
         self.assertEqual(context["schema"]["tables"][0]["name"], "stores")
         self.assertEqual(context["history"][0]["content"], "Use all sample dates")
@@ -70,20 +68,19 @@ class LLMTransportTests(unittest.TestCase):
         self.assertLessEqual(captured["timeout"], 40)
 
     def test_refusal_is_an_actionable_error(self):
-        with self.assertRaisesRegex(ModelError, "bike-store"):
-            self.from_body(envelope(output=[{"type": "message", "content": [
-                {"type": "refusal", "refusal": "Denied"}]}]))
+        with self.assertRaisesRegex(ModelError, "blocked"):
+            self.from_body(envelope(candidates=[]))
 
     def test_incomplete_response_is_not_executed(self):
         with self.assertRaisesRegex(ModelError, "did not finish"):
-            self.from_body(envelope(status="incomplete", incomplete_details={"reason": "max_output_tokens"}))
+            self.from_body(envelope(candidates=[{"finishReason": "MAX_TOKENS", "content": {"parts": []}}]))
 
     def test_invalid_envelopes_become_model_errors(self):
-        invalid = [None, [], {}, envelope(output=None), envelope(output=[]),
-                   envelope(output=[{"type": "message", "content": None}]),
-                   envelope(output=[{"type": "message", "content": 42}]),
-                   envelope(output=[{"type": "message", "content": [
-                       {"type": "output_text", "text": "{truncated"}]}])]
+        invalid = [None, [], {}, envelope(candidates=None), envelope(candidates=[]),
+                   envelope(candidates=[{"finishReason": "STOP", "content": None}]),
+                   envelope(candidates=[{"finishReason": "STOP", "content": 42}]),
+                   envelope(candidates=[{"finishReason": "STOP", "content": {"parts": [
+                       {"text": "{truncated"}]}}])]
         for body in invalid:
             with self.subTest(body=body), self.assertRaises(ModelError):
                 self.from_body(body)

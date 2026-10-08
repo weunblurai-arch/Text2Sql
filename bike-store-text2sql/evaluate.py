@@ -96,7 +96,7 @@ def evaluate(cases, path=DB_PATH, api_key="", reference_only=False):
     successes = sum(r["execution_ok"] for r in records)
     matches = sum(r["result_match"] for r in records)
     return {
-        "mode": "reference_only" if reference_only else "gpt-4o-mini",
+        "mode": "reference_only" if reference_only else (os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"),
         "dataset": "Kaggle bike-store-sample-database",
         "case_count": len(records),
         "metrics": {
@@ -125,9 +125,9 @@ def main():
     parser.add_argument("--reference-only", action="store_true", help="Verify fixture data without any API call; does not measure LLM accuracy.")
     args = parser.parse_args()
     load_env(ROOT / ".env")
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not args.reference_only and not key:
-        parser.error("Set OPENAI_API_KEY in .env, or use --reference-only to verify the example dataset.")
+        parser.error("Set GEMINI_API_KEY in .env, or use --reference-only to verify the example dataset.")
     cases = load_cases(args.cases)
     # Keep accidental experimentation batches small; split larger UC10 sets explicitly.
     if not args.reference_only and len(cases) > 100:

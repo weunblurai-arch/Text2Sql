@@ -66,19 +66,19 @@ class AssignmentTests(unittest.TestCase):
         plan = {"sql": EXAMPLES[0]["sql"], "title": "Store count", "chart": EXAMPLES[0]["chart"], "notes": [],
                 "usage": {"input_tokens": 2000, "output_tokens": 300}}
         with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
-             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", return_value=plan) as model:
             answer = ask(EXAMPLES[0]["question"], self.path, "fake-key")
-            self.assertEqual(model.call_args.args[5], "gpt-4o-mini")
+            self.assertEqual(model.call_args.args[5], "gemini-3.8-flash")
             self.assertIn("staffs", [t["name"] for t in model.call_args.args[2]["tables"]])
             self.assertEqual(answer["rows"], [{"total_stores": 3}])
-            self.assertAlmostEqual(answer["estimated_cost_usd"], 0.00048)
+            self.assertAlmostEqual(answer["estimated_cost_usd"], 0.002625)
 
     def test_evaluation_compares_results_instead_of_sql_text(self):
         equivalent = {"sql": "SELECT SUM(1) AS differently_named_count FROM stores", "title": "Stores",
                       "chart": EXAMPLES[0]["chart"], "notes": [], "usage": {}}
         with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
-             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", return_value=equivalent):
             report = evaluate(EXAMPLES[:1], self.path, "fake-key")
         self.assertEqual(report["metrics"]["execution_accuracy"], 1.0)
@@ -89,7 +89,7 @@ class AssignmentTests(unittest.TestCase):
                "chart": EXAMPLES[0]["chart"], "notes": [], "usage": {"input_tokens": 10, "output_tokens": 5}}
         good = {**bad, "sql": EXAMPLES[0]["sql"]}
         with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
-             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", side_effect=[bad, good]) as model:
             answer = ask(EXAMPLES[0]["question"], self.path, "fake-key")
         self.assertEqual(answer["rows"], [{"total_stores": 3}])
@@ -103,7 +103,7 @@ class AssignmentTests(unittest.TestCase):
                "notes": [], "usage": {}}
         worse = {**bad, "sql": "DROP TABLE stores"}
         with patch("bikestore.assignment.break_question", return_value=([EXAMPLES[0]["question"]], {})), \
-             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", side_effect=[bad, worse]) as model:
             with self.assertRaises(QueryError):
                 ask(EXAMPLES[0]["question"], self.path, "fake-key")
@@ -117,7 +117,7 @@ class AssignmentTests(unittest.TestCase):
                  {"sql": EXAMPLES[1]["sql"], "title": "Brands", "chart": EXAMPLES[1]["chart"],
                   "notes": [], "usage": {}}]
         with patch("bikestore.assignment.break_question", return_value=(questions, {})), \
-             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key: (schema, {})), \
+             patch("bikestore.assignment.select_tables", side_effect=lambda _q, schema, _key, _model: (schema, {})), \
              patch("bikestore.assignment.generate_plan", side_effect=plans):
             answer = ask("How many stores and which brands?", self.path, "fake-key")
         self.assertEqual(len(answer["subresults"]), 2)

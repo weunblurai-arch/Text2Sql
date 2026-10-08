@@ -1,15 +1,16 @@
-"""Optional schema-aware OpenAI adapter. No external packages are required."""
+"""Schema-aware Gemini adapter using the REST generateContent API."""
 import json
 import os
 import socket
+import re
 from datetime import date
 from pathlib import Path
 from urllib import error, request
 
 from .sql import ALLOWED_FUNCTIONS
 
-DEFAULT_MODEL = "gpt-4o-mini"
-API_URL = "https://api.openai.com/v1/responses"
+DEFAULT_MODEL = "gemini-3.8-flash"
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 
 class ModelError(ValueError):
@@ -27,7 +28,7 @@ def load_env(path):
             continue
         key, value = line.split("=", 1)
         key, value = key.strip(), value.strip()
-        if key not in {"OPENAI_API_KEY", "OPENAI_MODEL"}:
+        if key not in {"GEMINI_API_KEY", "GEMINI_MODEL"}:
             continue
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
@@ -148,19 +149,17 @@ History provides follow-up context only; the latest question determines the curr
 
 def _request_structured(instructions, context, response_schema, api_key, model=DEFAULT_MODEL):
     """One strict JSON model call, shared by the workflow's agents."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", model):
+        raise ModelError("Invalid Gemini model name in GEMINI_MODEL.")
     payload = {
-        "model": model,
-        "instructions": instructions,
-        "input": [{"role": "user", "content": json.dumps(context)}],
-        "store": False,
-        "max_output_tokens": 2500,
-        "text": {"format": {
-            "type": "json_schema", "name": "bike_store_query", "strict": True,
-            "schema": response_schema,
-        }},
+        "system_instruction": {"parts": [{"text": instructions}]},
+        "contents": [{"parts": [{"text": json.dumps(context)}]}],
+        "generationConfig": {"maxOutputTokens": 2500,
+                             "responseFormat": {"text": {"mimeType": "application/json",
+                                                         "schema": response_schema}}},
     }
-    req = request.Request(API_URL, data=json.dumps(payload).encode("utf-8"), headers={
-        "Authorization": "Bearer " + api_key,
+    req = request.Request(API_URL.format(model), data=json.dumps(payload).encode("utf-8"), headers={
+        "x-goog-api-key": api_key,
         "Content-Type": "application/json",
     }, method="POST")
     try:
@@ -171,43 +170,37 @@ def _request_structured(instructions, context, response_schema, api_key, model=D
         body = json.loads(raw)
     except error.HTTPError as exc:
         messages = {
-            401: "The OpenAI API key was rejected. Check OPENAI_API_KEY in your .env file.",
-            403: "This API key cannot access the selected model. Check your OpenAI project permissions.",
-            404: "The selected model is unavailable. Check OPENAI_MODEL and your account access.",
-            429: "OpenAI rate or usage limits were reached. Check your API quota and retry.",
+            400: "Gemini rejected the request. Check GEMINI_MODEL and try again.",
+            401: "The Gemini API key was rejected. Check GEMINI_API_KEY in your .env file.",
+            403: "This Gemini API key cannot access the selected model. Check its project permissions.",
+            404: "The selected Gemini model is unavailable. Check GEMINI_MODEL.",
+            429: "Gemini rate or usage limits were reached. Check your API quota and retry.",
         }
         raise ModelError(messages.get(exc.code,
-                         "OpenAI could not complete this request. Check the model configuration and retry.")) from None
+                         "Gemini could not complete this request. Check the model configuration and retry.")) from None
     except (error.URLError, TimeoutError, socket.timeout):
-        raise ModelError("Could not reach OpenAI within 35 seconds. Check your connection and retry.") from None
+        raise ModelError("Could not reach Gemini within 35 seconds. Check your connection and retry.") from None
     except (ValueError, UnicodeError):
-        raise ModelError("OpenAI returned an unreadable response. Please retry.") from None
-    if not isinstance(body, dict) or body.get("status") != "completed":
-        raise ModelError("The AI did not finish generating SQL. Try a shorter, more specific question.")
-    output = body.get("output")
-    if not isinstance(output, list):
-        raise ModelError("The AI returned no query plan. Please retry.")
-    texts = []
-    for item in output:
-        if not isinstance(item, dict) or item.get("type") != "message":
-            continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            raise ModelError("The AI returned an invalid message. Please retry.")
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            if part.get("type") == "refusal":
-                raise ModelError("The AI could not help with that request. Ask a bike-store business question.")
-            if part.get("type") == "output_text" and isinstance(part.get("text"), str):
-                texts.append(part["text"])
+        raise ModelError("Gemini returned an unreadable response. Please retry.") from None
+    candidates = body.get("candidates") if isinstance(body, dict) else None
+    if not isinstance(candidates, list) or not candidates:
+        raise ModelError("Gemini returned no answer. The request may have been blocked; try rephrasing it.")
+    first = candidates[0]
+    if not isinstance(first, dict) or first.get("finishReason") != "STOP":
+        raise ModelError("Gemini did not finish its answer. Try a shorter, more specific question.")
+    content = first.get("content")
+    parts = content.get("parts") if isinstance(content, dict) else None
+    if not isinstance(parts, list):
+        raise ModelError("Gemini returned no query plan. Please retry.")
+    texts = [part["text"] for part in parts if isinstance(part, dict) and isinstance(part.get("text"), str)]
     try:
         plan = json.loads("".join(texts))
     except (ValueError, TypeError):
         raise ModelError("The AI returned an invalid query plan. Please retry.") from None
-    usage = body.get("usage") or {}
-    return plan, {"input_tokens": usage.get("input_tokens", 0),
-                  "output_tokens": usage.get("output_tokens", 0)}
+    usage = body.get("usageMetadata") or {}
+    return plan, {"input_tokens": int(usage.get("promptTokenCount") or 0),
+                  "output_tokens": int(usage.get("candidatesTokenCount") or 0)
+                                   + int(usage.get("thoughtsTokenCount") or 0)}
 
 
 def break_question(question, history, schema, api_key, model=DEFAULT_MODEL):
